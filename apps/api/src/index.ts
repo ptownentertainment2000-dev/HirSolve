@@ -1,4 +1,5 @@
-import { auth } from '@hirsolve/auth';
+import { checkDatabaseHealth } from '@hirsolve/db';
 
-console.log('HirSolve API booted');
-console.log(auth.createSession('user_123', 'buyer@hirsolve.dev', ['CUSTOMER']));
+const health = await checkDatabaseHealth();
+console.log(JSON.stringify({ service: 'hirsolve-api', database: health.ok ? 'up' : 'down' }));
+if (!health.ok) process.exitCode = 1;
