@@ -4,3 +4,6 @@ corepack enable
 corepack prepare pnpm@9.12.0 --activate
 pnpm install
 pnpm install --frozen-lockfile
+git add pnpm-lock.yaml
+git commit -m "chore: add pnpm lockfile"
+git push origin main
