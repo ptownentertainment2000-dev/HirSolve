@@ -1,2 +1,5 @@
 pnpm-lock.yaml
 pnpm install
+corepack enable
+corepack prepare pnpm@9.12.0 --activate
+pnpm install
