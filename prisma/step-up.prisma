@@ -1,0 +1,25 @@
+
+
+enum StepUpAction {
+  PASSWORD_CHANGE
+  CONTACT_CHANGE
+  PAYOUT_ACCOUNT_CHANGE
+  LARGE_WITHDRAWAL
+  SECURITY_CHANGE
+}
+
+model StepUpGrant {
+  id         String      @id @default(cuid())
+  userId     String
+  sessionId  String
+  action     StepUpAction
+  tokenHash  String      @unique
+  createdAt  DateTime    @default(now())
+  expiresAt  DateTime
+  consumedAt DateTime?
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session    Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, action, expiresAt])
+  @@index([sessionId, action])
+}
