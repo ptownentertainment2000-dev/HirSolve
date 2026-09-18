@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@hirsolve/db": ["packages/db/src/index.ts"],
+      "@hirsolve/auth": ["packages/auth/src/index.ts"],
+      "@hirsolve/ledger": ["packages/ledger/src/index.ts"],
+      "@hirsolve/security": ["packages/security/src/index.ts"]
+    }
+  }
+}
