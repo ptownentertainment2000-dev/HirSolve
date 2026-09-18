@@ -1,0 +1,456 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// HirSolve Stage 1 data contracts.
+// Monetary values are stored as fixed-scale Decimal values. Ledger balance,
+// immutability, and state-transition invariants must also be enforced by the
+// service layer and database transaction boundaries.
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  LOCKED
+  CLOSED
+}
+
+enum VerificationType {
+  EMAIL
+  PHONE
+  IDENTITY
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  FAILED
+  EXPIRED
+}
+
+enum MfaMethod {
+  TOTP
+  SMS
+  EMAIL
+  WEBAUTHN
+  BACKUP_CODE
+}
+
+enum MfaStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+enum Role {
+  CUSTOMER
+  SELLER
+  HIRER
+  ADMIN
+  COMPLIANCE
+  SUPPORT
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  MFA_CHALLENGE
+  STEP_UP
+  WITHDRAWAL_REQUEST
+  WITHDRAWAL_APPROVE
+  WITHDRAWAL_REJECT
+  KYC_SUBMIT
+  KYC_REVIEW
+  ACCOUNT_LOCK
+}
+
+enum SecurityEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  MFA_SUCCESS
+  MFA_FAILURE
+  STEP_UP_REQUIRED
+  STEP_UP_SUCCESS
+  PASSWORD_CHANGED
+  EMAIL_CHANGED
+  PHONE_CHANGED
+  SUSPICIOUS_ACTIVITY
+  RATE_LIMITED
+  ACCOUNT_LOCKED
+  WITHDRAWAL_BLOCKED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  IN_REVIEW
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum AccountPurpose {
+  USER_WALLET
+  ESCROW
+  PLATFORM_REVENUE
+  WITHDRAWAL_PAYABLE
+  FEES
+  SYSTEM_CLEARING
+}
+
+enum TransactionType {
+  MARKETPLACE_PAYMENT
+  ESCROW_RELEASE
+  WITHDRAWAL
+  REFUND
+  FEE
+  ADJUSTMENT
+}
+
+enum TransactionStatus {
+  PENDING
+  POSTED
+  VOIDED
+  FAILED
+}
+
+enum PostingSide {
+  DEBIT
+  CREDIT
+}
+
+enum ListingStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  SOLD
+  ARCHIVED
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  FUNDED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  DISPUTED
+  REFUNDED
+}
+
+enum WithdrawalStatus {
+  REQUESTED
+  PENDING_REVIEW
+  APPROVED
+  PROCESSING
+  COMPLETED
+  REJECTED
+  FAILED
+  CANCELLED
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  phone               String?              @unique
+  passwordHash        String
+  status              UserStatus           @default(PENDING_VERIFICATION)
+  countryCode         String?              @db.VarChar(2)
+  roles               UserRole[]
+  verifications       Verification[]
+  sessions            Session[]
+  mfaMethods          MfaMethodRecord[]
+  kycProfile          KycProfile?
+  riskAssessments     RiskAssessment[]
+  accounts            Account[]
+  listings            Listing[]
+  buyerOrders         Order[]              @relation("BuyerOrders")
+  sellerOrders        Order[]              @relation("SellerOrders")
+  withdrawalRequests  WithdrawalRequest[]
+  auditLogs           AuditLog[]
+  securityEvents      SecurityEvent[]
+  idempotencyKeys     IdempotencyKey[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  lastLoginAt         DateTime?
+  closedAt            DateTime?
+
+  @@index([status])
+  @@index([countryCode])
+}
+
+model UserRole {
+  userId     String
+  role       Role
+  assignedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, role])
+}
+
+model Verification {
+  id           String             @id @default(cuid())
+  userId       String
+  type         VerificationType
+  status       VerificationStatus @default(PENDING)
+  destination  String
+  tokenHash    String?
+  expiresAt    DateTime?
+  verifiedAt   DateTime?
+  attempts     Int                @default(0)
+  createdAt    DateTime           @default(now())
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, status])
+  @@index([expiresAt])
+}
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  tokenHash        String    @unique
+  ipAddress        String?
+  userAgent        String?
+  createdAt        DateTime  @default(now())
+  lastSeenAt       DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+model MfaMethodRecord {
+  id           String     @id @default(cuid())
+  userId       String
+  method       MfaMethod
+  status       MfaStatus  @default(PENDING)
+  label        String?
+  secretCipher String?
+  verifiedAt   DateTime?
+  createdAt    DateTime   @default(now())
+  revokedAt    DateTime?
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model KycProfile {
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  status         KycStatus @default(NOT_STARTED)
+  provider       String?
+  providerRef    String?
+  documentType   String?
+  countryCode    String?
+  submittedAt    DateTime?
+  reviewedAt     DateTime?
+  expiresAt      DateTime?
+  rejectionCode  String?
+  metadata       Json?
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+model RiskAssessment {
+  id          String    @id @default(cuid())
+  userId      String
+  level       RiskLevel
+  score       Int?
+  signals     Json?
+  reason      String?
+  assessedAt  DateTime  @default(now())
+  expiresAt   DateTime?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, assessedAt])
+  @@index([level])
+}
+
+model Account {
+  id             String        @id @default(cuid())
+  userId         String?
+  code           String        @unique
+  name           String
+  type           AccountType
+  purpose        AccountPurpose
+  currency       String        @default("USD") @db.VarChar(3)
+  isSystem       Boolean       @default(false)
+  user           User?         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  debitPostings  LedgerPosting[] @relation("DebitAccount")
+  creditPostings LedgerPosting[] @relation("CreditAccount")
+  createdAt      DateTime      @default(now())
+
+  @@index([userId, purpose])
+  @@index([type, purpose])
+}
+
+model LedgerTransaction {
+  id             String             @id @default(cuid())
+  reference      String             @unique
+  type           TransactionType
+  status         TransactionStatus  @default(PENDING)
+  currency       String             @db.VarChar(3)
+  description    String?
+  idempotencyKey String?            @unique
+  metadata       Json?
+  postedAt       DateTime?
+  voidedAt       DateTime?
+  createdAt      DateTime           @default(now())
+  postings       LedgerPosting[]
+
+  @@index([type, status])
+  @@index([createdAt])
+}
+
+model LedgerPosting {
+  id            String            @id @default(cuid())
+  transactionId String
+  accountId     String
+  side          PostingSide
+  amount        Decimal           @db.Decimal(20, 8)
+  currency      String            @db.VarChar(3)
+  memo          String?
+  createdAt     DateTime          @default(now())
+  transaction   LedgerTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  account       Account           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([transactionId])
+  @@index([accountId, createdAt])
+}
+
+model Listing {
+  id          String        @id @default(cuid())
+  sellerId    String
+  title       String
+  description String
+  price       Decimal       @db.Decimal(20, 8)
+  currency    String        @default("USD") @db.VarChar(3)
+  status      ListingStatus @default(DRAFT)
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  seller      User          @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  orders      Order[]
+
+  @@index([sellerId, status])
+  @@index([status, createdAt])
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  listingId      String
+  buyerId        String
+  sellerId       String
+  status         OrderStatus @default(PENDING_PAYMENT)
+  totalAmount    Decimal     @db.Decimal(20, 8)
+  platformFee    Decimal     @db.Decimal(20, 8)
+  currency       String      @db.VarChar(3)
+  paymentTxId    String?     @unique
+  releaseTxId    String?     @unique
+  completedAt    DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  listing        Listing     @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  buyer          User        @relation("BuyerOrders", fields: [buyerId], references: [id], onDelete: Restrict)
+  seller         User        @relation("SellerOrders", fields: [sellerId], references: [id], onDelete: Restrict)
+
+  @@index([buyerId, status])
+  @@index([sellerId, status])
+  @@index([listingId])
+}
+
+model WithdrawalRequest {
+  id             String           @id @default(cuid())
+  userId         String
+  amount         Decimal          @db.Decimal(20, 8)
+  currency       String           @db.VarChar(3)
+  destinationRef String
+  status         WithdrawalStatus @default(REQUESTED)
+  idempotencyKey String           @unique
+  riskLevel      RiskLevel?
+  provider       String?
+  providerRef    String?
+  ledgerTxId     String?          @unique
+  requestedAt    DateTime         @default(now())
+  reviewedAt     DateTime?
+  completedAt    DateTime?
+  failureReason  String?
+  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+  @@index([status, requestedAt])
+}
+
+model IdempotencyKey {
+  id             String   @id @default(cuid())
+  userId         String
+  key            String
+  operation      String
+  requestHash    String
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, operation, key])
+  @@index([expiresAt])
+}
+
+model AuditLog {
+  id           String      @id @default(cuid())
+  userId       String?
+  actorUserId  String?
+  action       AuditAction
+  resourceType String
+  resourceId   String?
+  ipAddress    String?
+  metadata     Json?
+  createdAt    DateTime    @default(now())
+  user         User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([action, createdAt])
+}
+
+model SecurityEvent {
+  id          String            @id @default(cuid())
+  userId      String?
+  type        SecurityEventType
+  severity    RiskLevel         @default(LOW)
+  ipAddress   String?
+  userAgent   String?
+  details     Json?
+  createdAt   DateTime          @default(now())
+  user        User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@index([severity, createdAt])
+}
