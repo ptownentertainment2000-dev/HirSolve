@@ -4,3 +4,6 @@ cd HirSolve
 corepack enable
 
 pnpm install --lockfile-only
+git add pnpm-lock.yaml
+git commit -m "Add pnpm lockfile"
+git push origin main
